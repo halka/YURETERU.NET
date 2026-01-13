@@ -18,7 +18,7 @@ Use with [QUAKE.ONE/SENSE by PRIORIS](https://quake.one/sense/)
 
 ## Recommend Environments
 - Raspberry Pi
-- ツイ廃モニタ
+- ツイ廃ディスプレイ
 
 ## Screenshots
 ![Screenshot](https://raw.githubusercontent.com/halka/yureteruWPF/refs/heads/main/Docs/screen1.png)
