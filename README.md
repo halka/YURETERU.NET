@@ -15,8 +15,8 @@ Displays
 ![Screenshot](https://raw.githubusercontent.com/halka/yureteruWPF/refs/heads/main/Docs/screen1.png)
 
 ## 免責事項
-生命に関わることですから、これをどうこうしてどうなっても一切の責任は負いません。
-気象庁でも、民間気象事業者でもない。
+生命に関わることですから、これをどうこうしてどうなっても**一切の責任は負いません**
+
 **ラジオやテレビ、防災無線から公式情報を確認して、取るべき行動を。**
 
 ## License
