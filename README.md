@@ -5,16 +5,20 @@
 Use with [QUAKE.ONE/SENSE by PRIORIS](https://quake.one/sense/)
 
 ## 免責事項
-生命に関わることですが、これをどうこうしてあなたがどうなっても**一切の責任を負いません。**
+生命や財産に関わる情報を扱っていますが、これをどうこうして、あなたがどうなっても**一切の責任を負いません。**
 
 **ラジオやテレビ、防災無線から公式情報を確認して、取るべき行動を。**
 
 ## Features
-Displays
+### Display
 - Intensity
 - LPGM
 - JMA Scale Coloring
 - Export Logs
+
+## Recommend Environments
+- Raspberry Pi
+- ツイ廃モニタ
 
 ## Screenshots
 ![Screenshot](https://raw.githubusercontent.com/halka/yureteruWPF/refs/heads/main/Docs/screen1.png)
