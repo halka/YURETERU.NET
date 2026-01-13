@@ -10,7 +10,6 @@ Use with [QUAKE.ONE/SENSE by PRIORIS](https://quake.one/sense/)
 **ラジオやテレビ、防災無線から公式情報を確認して、取るべき行動を。**
 
 ## Features
-### Display
 - Intensity
 - LPGM
 - JMA Scale Coloring
