@@ -21,8 +21,11 @@ Use with [QUAKE.ONE/SENSE by PRIORIS](https://quake.one/sense/)
 - Raspberry Pi
 - ツイ廃ディスプレイ
 
-## Screenshots
-![Screenshot](https://raw.githubusercontent.com/halka/yureteruWPF/refs/heads/main/Docs/screen1.png)
+## Demo
+[![Demo movie]
+(https://raw.githubusercontent.com/halka/yureteruWPF/refs/heads/main/Docs/screen1.png)]
+(https://youtube.com/shorts/HBxv5mRV1yw)
+![Screenshot]()
 
 ## License
 MIT License. See `LICENSE`.
