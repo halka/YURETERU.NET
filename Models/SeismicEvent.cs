@@ -3,14 +3,9 @@ using System;
 namespace YureteruWPF.Models;
 
 /// <summary>
-/// Represents a recorded seismic event
+/// Represents a recorded seismic event (immutable)
 /// </summary>
-public class SeismicEvent
+public record SeismicEvent(DateTime Timestamp, double MaxIntensity, double MaxGal, int MaxLpgmClass, double MaxSva)
 {
-    public DateTime Timestamp { get; set; }
-    public double MaxIntensity { get; set; }
-    public double MaxGal { get; set; }
-    public int MaxLpgmClass { get; set; }
-    public double MaxSva { get; set; }
     public string FormattedTimestamp => Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff");
 }

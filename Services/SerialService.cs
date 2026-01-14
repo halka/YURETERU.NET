@@ -1,9 +1,10 @@
-using System;
+﻿using System;
 using System.IO;
 using System.IO.Ports;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Text;
+using System.Globalization;
 
 namespace YureteruWPF.Services;
 
@@ -141,22 +142,89 @@ public class SerialService : ISerialService, IDisposable
         }
     }
 
+    private static string? FindFileUpwards(string startDir, string fileName, int maxLevels = 6)
+    {
+        try
+        {
+            var dir = new DirectoryInfo(startDir);
+            for (int i = 0; i <= maxLevels && dir != null; i++)
+            {
+                var candidate = Path.Combine(dir.FullName, fileName);
+                if (File.Exists(candidate)) return candidate;
+                dir = dir.Parent;
+            }
+        }
+        catch { /* ignore */ }
+        return null;
+    }
+
     private async Task MockReadLoopAsync(CancellationToken cancellationToken)
     {
-        string testFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "test_data.csv");
-        // Fallback to project root if base directory doesn't have it (for dev)
-        if (!File.Exists(testFilePath))
-            testFilePath = "test_data.csv";
+        // Try common locations: base dir, project root, working dir, and walk up
+        string testFileName = "test_data.csv";
+        string? testFilePath = null;
+
+        var baseDir = AppDomain.CurrentDomain.BaseDirectory ?? Environment.CurrentDirectory;
+        // 1) base dir
+        if (File.Exists(Path.Combine(baseDir, testFileName)))
+            testFilePath = Path.Combine(baseDir, testFileName);
+        // 2) current working directory
+        if (testFilePath == null && File.Exists(Path.Combine(Environment.CurrentDirectory, testFileName)))
+            testFilePath = Path.Combine(Environment.CurrentDirectory, testFileName);
+        // 3) search upwards from base dir
+        if (testFilePath == null)
+            testFilePath = FindFileUpwards(baseDir, testFileName, maxLevels: 8);
+        // 4) fallback to file name (relative)
+        if (testFilePath == null && File.Exists(testFileName))
+            testFilePath = Path.GetFullPath(testFileName);
 
         var startTime = DateTime.Now;
         var random = new Random();
         string[]? fileLines = null;
         int currentLineIndex = 0;
 
-        if (File.Exists(testFilePath))
+        if (!string.IsNullOrEmpty(testFilePath) && File.Exists(testFilePath))
         {
-            try { fileLines = File.ReadAllLines(testFilePath); }
+            try
+            {
+                fileLines = File.ReadAllLines(testFilePath);
+            }
             catch { /* Ignore and fallback */ }
+        }
+
+        // Try to find first data line index for CSV with header/meta lines.
+        int dataStartIndex = 0;
+        if (fileLines != null && fileLines.Length > 0)
+        {
+            for (int i = 0; i < fileLines.Length; i++)
+            {
+                var line = fileLines[i].Trim();
+                if (string.IsNullOrEmpty(line)) continue;
+                // If line explicitly contains the header 'NS' or 'NS,EW' assume next lines are data
+                if (line.StartsWith("NS", StringComparison.OrdinalIgnoreCase) || line.StartsWith("NS,EW", StringComparison.OrdinalIgnoreCase))
+                {
+                    dataStartIndex = i + 1;
+                    break;
+                }
+                // Otherwise test whether the line contains at least three numeric tokens
+                var tokens = line.Split(',');
+                int numericCount = 0;
+                foreach (var t in tokens)
+                {
+                    if (double.TryParse(t.Trim(), NumberStyles.Float | NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out _))
+                    {
+                        numericCount++;
+                        if (numericCount >= 3) break;
+                    }
+                }
+                if (numericCount >= 3)
+                {
+                    dataStartIndex = i;
+                    break;
+                }
+            }
+
+            currentLineIndex = dataStartIndex;
         }
 
         while (!cancellationToken.IsCancellationRequested)
@@ -164,22 +232,61 @@ public class SerialService : ISerialService, IDisposable
             double x = 0, y = 0, z = 0;
             double intensity = 0;
 
-            if (fileLines != null && fileLines.Length > 0)
+            if (fileLines != null && fileLines.Length > dataStartIndex)
             {
-                // File-based playback
+                // File-based playback (robust parsing)
                 string line = fileLines[currentLineIndex].Trim();
                 currentLineIndex++;
-                if (currentLineIndex >= fileLines.Length) currentLineIndex = 0;
+                if (currentLineIndex >= fileLines.Length) currentLineIndex = dataStartIndex; // loop within data region
 
-                if (string.IsNullOrWhiteSpace(line) || line.StartsWith("#")) continue;
-
-                var parts = line.Split(',');
-                if (parts.Length >= 3)
+                if (string.IsNullOrWhiteSpace(line))
                 {
-                    double.TryParse(parts[0], out x);
-                    double.TryParse(parts[1], out y);
-                    double.TryParse(parts[2], out z);
-                    if (parts.Length >= 4) double.TryParse(parts[3], out intensity);
+                    await Task.Delay(10, cancellationToken);
+                    continue;
+                }
+
+                // Skip obvious metadata/comment lines
+                if (line.StartsWith("#") || line.IndexOf("SITE CODE", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    line.IndexOf("SAMPLING RATE", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    line.IndexOf("INITIAL TIME", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    continue;
+                }
+
+                // Try to extract numeric tokens robustly (first 3 numbers -> x,y,z ; optional 4th -> intensity)
+                var tokens = line.Split(',');
+                var nums = new List<double>(4);
+                foreach (var t in tokens)
+                {
+                    if (nums.Count >= 4) break;
+                    var s = t.Trim();
+                    if (string.IsNullOrEmpty(s)) continue;
+                    if (double.TryParse(s, NumberStyles.Float | NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var v))
+                    {
+                        nums.Add(v);
+                    }
+                    else
+                    {
+                        // some lines may contain localized minus or weird chars; try replacing common unicode minus
+                        var replaced = s.Replace("−", "-");
+                        if (double.TryParse(replaced, NumberStyles.Float | NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out v))
+                        {
+                            nums.Add(v);
+                        }
+                    }
+                }
+
+                if (nums.Count >= 3)
+                {
+                    x = nums[0];
+                    y = nums[1];
+                    z = nums[2];
+                    if (nums.Count >= 4) intensity = nums[3];
+                }
+                else
+                {
+                    // not a data line; skip
+                    continue;
                 }
             }
             else
@@ -193,12 +300,13 @@ public class SerialService : ISerialService, IDisposable
                 else startTime = DateTime.Now;
             }
 
-            string accLine = $"$XSACC,{x:F3},{y:F3},{z:F3}*00";
-            string intLine = $"$XSINT,{intensity:F2}*00";
+            string accLine = $"$XSACC,{x.ToString("F3", CultureInfo.InvariantCulture)},{y.ToString("F3", CultureInfo.InvariantCulture)},{z.ToString("F3", CultureInfo.InvariantCulture)}*00";
+            string intLine = $"$XSINT,{intensity.ToString("F2", CultureInfo.InvariantCulture)}*00";
 
             DataReceived?.Invoke(this, accLine);
             DataReceived?.Invoke(this, intLine);
 
+            // If the original data is recorded at high frequency (e.g. 100Hz), you may want a smaller delay.
             await Task.Delay(100, cancellationToken);
         }
     }

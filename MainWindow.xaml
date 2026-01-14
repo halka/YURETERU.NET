@@ -10,8 +10,8 @@
         WindowStartupLocation="CenterScreen">
 
     <Window.InputBindings>
-        <KeyBinding Key="T" Command="{Binding StartMockCommand}"/>
-        <KeyBinding Key="Esc" Command="{Binding DisconnectCommand}"/>
+        <KeyBinding Modifiers="Control+Shift" Key="T" Command="{Binding StartMockCommand}"/>
+        <KeyBinding Modifiers="Control+Shift" Key="Q" Command="{Binding DisconnectCommand}"/>
     </Window.InputBindings>
 
     <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -46,7 +46,9 @@
 
                     <Rectangle Width="1" Fill="{StaticResource SubtleBorderBrush}" Margin="5,4" Height="16"/>
 
-                        <Button Content="Connect"
+                        <Button x:Name="ConnectButton"
+                            AutomationProperties.Name="Connect"
+                            Content="Connect"
                             Command="{Binding OpenSettingsCommand}"
                             Margin="5,0,5,0">
                             <Button.Style>
@@ -61,7 +63,9 @@
                             </Button.Style>
                         </Button>
 
-                    <Button Content="Disconnect"
+                    <Button x:Name="DisconnectButton"
+                            AutomationProperties.Name="Disconnect"
+                            Content="Disconnect"
                             Command="{Binding DisconnectCommand}">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource DangerButtonStyle}">
@@ -113,38 +117,9 @@
                     BorderBrush="#60ffffff" BorderThickness="1">
                 <StackPanel HorizontalAlignment="Center">
                     <TextBlock Text="{Binding CurrentIntensity, StringFormat=F2}"
-                               FontSize="140" FontWeight="Black" Margin="0,-20"
-                               FontFamily="Bahnschrift"
-                               Style="{StaticResource JmaContrastTextStyle}"/>
-                    <TextBlock Text="EARTHQUAKE DETECTING" FontSize="20" FontWeight="Black"
-                               HorizontalAlignment="Center">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Foreground" Value="{StaticResource AlertForegroundBrush}"/>
-                                <Setter Property="Opacity" Value="0.0"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsRecordingEvent}" Value="True">
-                                        <Setter Property="Opacity" Value="1"/>
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding CurrentIntensity, Converter={StaticResource IntensityToColorConverter}}" Value="{StaticResource JmaCol5L}">
-                                        <Setter Property="Foreground" Value="{StaticResource PrimaryTextBrush}"/>
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding CurrentIntensity, Converter={StaticResource IntensityToColorConverter}}" Value="{StaticResource JmaCol5U}">
-                                        <Setter Property="Foreground" Value="{StaticResource PrimaryTextBrush}"/>
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding CurrentIntensity, Converter={StaticResource IntensityToColorConverter}}" Value="{StaticResource JmaCol6L}">
-                                        <Setter Property="Foreground" Value="{StaticResource PrimaryTextBrush}"/>
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding CurrentIntensity, Converter={StaticResource IntensityToColorConverter}}" Value="{StaticResource JmaCol6U}">
-                                        <Setter Property="Foreground" Value="{StaticResource PrimaryTextBrush}"/>
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding CurrentIntensity, Converter={StaticResource IntensityToColorConverter}}" Value="{StaticResource JmaCol7}">
-                                        <Setter Property="Foreground" Value="{StaticResource PrimaryTextBrush}"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
+                               FontSize="140" FontWeight="Black" Margin="0,-20" FontFamily="Bahnschrift"
+                               Style="{StaticResource JmaContrastTextStyle}"
+                               Foreground="{Binding CurrentIntensity, Converter={StaticResource IntensityForegroundConverter}}"/>
                 </StackPanel>
             </Border>
 

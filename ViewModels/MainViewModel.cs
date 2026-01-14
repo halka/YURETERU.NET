@@ -1,17 +1,21 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
+using System.Globalization;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using System.IO;
-using YureteruWPF.Models;
-using YureteruWPF.Services;
-using YureteruWPF.Utilities;
 using LiveChartsCore;
 using LiveChartsCore.SkiaSharpView;
 using LiveChartsCore.SkiaSharpView.Painting;
 using SkiaSharp;
-using System.Threading.Tasks;
+using System.IO;
+using System.Text;
+using YureteruWPF.Models;
+using YureteruWPF.Services;
+using YureteruWPF.Utilities;
 
 namespace YureteruWPF.ViewModels;
 
@@ -39,11 +43,26 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly DispatcherTimer _graphTimer;
     private readonly object _bufferLock = new();
 
+    // --- New: background parsing / producer-consumer queue to keep UI thread smooth ---
+    private readonly ConcurrentQueue<string> _rawQueue = new();
+    private CancellationTokenSource? _processingCts;
+    private Task? _processingTask;
+    private readonly DispatcherTimer _uiUpdateTimer;
+    private double _latestIntensity = 0.0; // latest received intensity (background-updated)
+    // -------------------------------------------------------------------------------
+
     public void Dispose()
     {
+        // stop timers
         _clockTimer.Stop();
         _graphTimer.Stop();
-        _serialService.DataReceived -= OnDataReceived;
+        _uiUpdateTimer.Stop();
+
+        // stop processing loop
+        _processingCts?.Cancel();
+        try { _processingTask?.Wait(500); } catch { /* ignore */ }
+
+        _serialService.DataReceived -= OnSerialDataEnqueue;
         _serialService.ErrorOccurred -= OnErrorOccurred;
         GC.SuppressFinalize(this);
     }
@@ -122,7 +141,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         IsMocking = false;
 
         // Subscribe to serial service events
-        _serialService.DataReceived += OnDataReceived;
+        _serialService.DataReceived += OnSerialDataEnqueue;
         _serialService.ErrorOccurred += OnErrorOccurred;
 
         // Initialize LiveCharts
@@ -178,6 +197,24 @@ public partial class MainViewModel : ObservableObject, IDisposable
         };
         _graphTimer.Tick += OnGraphTimerTick;
         _graphTimer.Start();
+
+        // UI update timer (throttle UI intensity updates to 10Hz)
+        _uiUpdateTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(100)
+        };
+        _uiUpdateTimer.Tick += (s, e) =>
+        {
+            // Smoothly push latest intensity to UI thread at limited rate
+            CurrentIntensity = _latestIntensity;
+            // Update IsRecordingEvent from recording service (safe read)
+            IsRecordingEvent = _eventRecordingService.IsRecordingEvent;
+        };
+        _uiUpdateTimer.Start();
+
+        // Start background processing loop for incoming serial lines
+        _processingCts = new CancellationTokenSource();
+        _processingTask = Task.Run(() => ProcessQueueLoopAsync(_processingCts.Token));
 
         RefreshPorts();
     }
@@ -259,51 +296,76 @@ public partial class MainViewModel : ObservableObject, IDisposable
         });
     }
 
-    private void OnDataReceived(object? sender, string line)
+    private void OnSerialDataEnqueue(object? sender, string line)
     {
-        var parsed = _dataParser.ParseLine(line);
-        if (parsed == null) return;
+        if (string.IsNullOrWhiteSpace(line)) return;
+        _rawQueue.Enqueue(line);
+    }
 
-        if (parsed is AccelerationData accData)
+    /// <summary>
+    /// Background loop that parses raw serial lines and performs non-UI processing.
+    /// Parsed acceleration data is added to _accBuffer (thread-safe via lock).
+    /// Parsed intensity is stored to _latestIntensity and passed to recording service.
+    /// UI updates are throttled and applied on the Dispatcher via _uiUpdateTimer.
+    /// </summary>
+    private async Task ProcessQueueLoopAsync(CancellationToken ct)
+    {
+        try
         {
-            // Calculate additional properties
-            accData.VectorMagnitude = SeismicCalculations.CalculateVectorMagnitude(accData.X, accData.Y, accData.Z);
-            accData.Gal = SeismicCalculations.ConvertToGal(accData.VectorMagnitude);
-
-            // LPGM Processing
-            // 1. Filter Acceleration (Bandpass 1.6s - 7.8s)
-            var filteredAcc = _lpgmFilter.Process(accData.Gal);
-
-            // 2. Integrate to Velocity (cm/s)
-            var velocity = Math.Abs(_lpgmIntegrator.Process(filteredAcc));
-
-            // 3. Update Properties (Rolling Max for Sva approximation)
-            // Ideally we should keep a rolling window for Sva, but for immediate feedback:
-            CurrentSva = velocity;
-            CurrentLpgmClass = SeismicCalculations.CalculateLpgmClass(CurrentSva);
-
-            // Add to buffer
-            lock (_bufferLock)
+            while (!ct.IsCancellationRequested)
             {
-                _accBuffer.Add(accData);
+                if (_rawQueue.TryDequeue(out var line))
+                {
+                    try
+                    {
+                        var parsed = _dataParser.ParseLine(line);
+                        if (parsed == null) continue;
+
+                        if (parsed is AccelerationData accData)
+                        {
+                            // Calculate additional properties
+                            accData.VectorMagnitude = SeismicCalculations.CalculateVectorMagnitude(accData.X, accData.Y, accData.Z);
+                            accData.Gal = SeismicCalculations.ConvertToGal(accData.VectorMagnitude);
+
+                            // LPGM Processing (background)
+                            var filteredAcc = _lpgmFilter.Process(accData.Gal);
+                            var velocity = Math.Abs(_lpgmIntegrator.Process(filteredAcc));
+
+                            // Update current SVA and class in background
+                            CurrentSva = velocity;
+                            CurrentLpgmClass = SeismicCalculations.CalculateLpgmClass(CurrentSva);
+
+                            // Add to buffer (will be consumed by UI graph timer)
+                            lock (_bufferLock)
+                            {
+                                _accBuffer.Add(accData);
+                            }
+                        }
+                        else if (parsed is ParsedData pData && pData.Type == DataType.Intensity)
+                        {
+                            var value = (double)(pData.Value ?? 0.0);
+
+                            // Update latest intensity (background) and notify recording service
+                            _latestIntensity = value;
+
+                            // Audio alert check & recording processing (non-UI)
+                            _audioAlertService.CheckAndPlayAlert(value);
+                            _eventRecordingService.ProcessIntensity(value, CurrentGal, CurrentLpgmClass, CurrentSva);
+                        }
+                    }
+                    catch
+                    {
+                        // ignore parse or processing errors per-line
+                    }
+
+                    continue;
+                }
+
+                // If queue empty, wait a short while
+                await Task.Delay(5, ct).ConfigureAwait(false);
             }
         }
-        else if (parsed is ParsedData pData && pData.Type == DataType.Intensity)
-        {
-            var value = (double)(pData.Value ?? 0.0);
-
-            App.Current.Dispatcher.Invoke(() =>
-            {
-                CurrentIntensity = value;
-
-                // Check for audio alert
-                _audioAlertService.CheckAndPlayAlert(value);
-
-                // Process for event recording
-                _eventRecordingService.ProcessIntensity(value, CurrentGal, CurrentLpgmClass, CurrentSva);
-                IsRecordingEvent = _eventRecordingService.IsRecordingEvent;
-            });
-        }
+        catch (OperationCanceledException) { }
     }
 
     private void OnGraphTimerTick(object? sender, EventArgs e)
@@ -344,4 +406,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
             System.Windows.MessageBox.Show(error, "Communication Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
         });
     }
+
+    partial void OnCurrentIntensityChanged(double value)
+    {
+        // Ensure derived bindings update when generated CurrentIntensity changes
+        OnPropertyChanged(nameof(IsIntensityAtLeast2));
+    }
+
+    public bool IsIntensityAtLeast2 => CurrentIntensity >= 2.0;
 }

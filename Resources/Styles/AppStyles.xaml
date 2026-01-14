@@ -5,6 +5,7 @@
     <!-- Converters -->
     <converters:IntensityToColorConverter x:Key="IntensityToColorConverter"/>
     <converters:LpgmClassToColorConverter x:Key="LpgmClassToColorConverter"/>
+    <converters:IntensityForegroundConverter x:Key="IntensityForegroundConverter"/>
 
     <!-- Colors & Brushes -->
     <SolidColorBrush x:Key="PrimaryTextBrush" Color="#000000"/>
@@ -68,6 +69,9 @@
     <Style x:Key="JmaContrastTextStyle" TargetType="TextBlock">
         <Setter Property="Foreground" Value="Black"/>
         <Style.Triggers>
+            <DataTrigger Binding="{Binding CurrentIntensity, Converter={StaticResource IntensityToColorConverter}}" Value="{StaticResource JmaCol3}">
+                <Setter Property="Foreground" Value="Black"/>
+            </DataTrigger>
             <DataTrigger Binding="{Binding CurrentIntensity, Converter={StaticResource IntensityToColorConverter}}" Value="{StaticResource JmaCol5U}">
                 <Setter Property="Foreground" Value="White"/>
             </DataTrigger>

@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
+using System.Windows.Media;
 
 namespace YureteruWPF.Converters;
 
@@ -108,4 +109,40 @@ public class LpgmClassToColorConverter : IValueConverter
     {
         throw new NotImplementedException();
     }
+}
+
+// Intensity に応じた Foreground を返すコンバーター。
+// ルール:
+//   - intensity >= 2.0 かつ JMA 色が 3 または 4 でない -> White
+//   - JMA 色が 3 または 4 -> Black (可読性優先)
+//   - その他 -> PrimaryTextBrush (リソース) または既定の黒
+public class IntensityForegroundConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (!double.TryParse(value?.ToString(), NumberStyles.Any, culture, out var intensity))
+        {
+            return Application.Current?.Resources["PrimaryTextBrush"] as Brush ?? Brushes.Black;
+        }
+
+        // 判定用：JMA カラーに該当するレンジを再現
+        // JmaCol3 : [2.5, 3.5), JmaCol4 : [3.5, 4.5)
+        bool isJma3 = intensity >= 2.5 && intensity < 3.5;
+        bool isJma4 = intensity >= 3.5 && intensity < 4.5;
+
+        if (isJma3 || isJma4)
+        {
+            return Brushes.Black;
+        }
+
+        if (intensity >= 2.0)
+        {
+            return Brushes.White;
+        }
+
+        return Application.Current?.Resources["PrimaryTextBrush"] as Brush ?? Brushes.Black;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
 }

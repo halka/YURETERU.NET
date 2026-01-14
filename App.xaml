@@ -13,6 +13,7 @@
             <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibilityConverter"/>
             <converters:InverseBoolConverter x:Key="InverseBoolConverter"/>
             <converters:BoolToStatusBrushConverter x:Key="BoolToStatusBrushConverter"/>
+            <converters:IntensityForegroundConverter x:Key="IntensityForegroundConverter"/>
         </ResourceDictionary>
     </Application.Resources>
 </Application>
