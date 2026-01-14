@@ -41,7 +41,8 @@ ScaffoldingReadMe.txt
 *~
 CodeCoverage/
 .vs/
-
+.vscode/
+acc20240101000167016.csv
 # MSBuild Binary and Structured Log
 *.binlog
 
